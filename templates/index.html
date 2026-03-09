@@ -249,8 +249,8 @@
   <div class="upload-zone" id="uploadZone">
     <div class="upload-icon">📄</div>
     <h3>Drop your PDF here</h3>
-    <p>or click to browse</p>
-    <input type="file" id="fileInput" accept=".pdf" />
+    <p>or click to browse — PDF, Word, TXT</p>
+    <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.txt" />
     <div class="file-selected" id="fileSelected"></div>
   </div>
 
@@ -314,7 +314,8 @@
     e.preventDefault();
     uploadZone.classList.remove('dragover');
     const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.pdf')) setFile(file);
+    const allowed = ['.pdf', '.docx', '.doc', '.txt'];
+    if (file && allowed.some(ext => file.name.toLowerCase().endsWith(ext))) setFile(file);
   });
 
   fileInput.addEventListener('change', () => {
@@ -400,7 +401,29 @@
   });
 
   async function generateVideo(segId, prompt, duration) {
-    alert(`Sending segment ${segId} to Kling API...\n\nThis feature requires a Kling API key configured in .env`);
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+
+    try {
+      const resp = await fetch('/api/generate-video', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ prompt, duration })
+      });
+      const data = await resp.json();
+
+      if (data.data && data.data.task_id) {
+        btn.textContent = '✓ Submitted (Task: ' + data.data.task_id.slice(0, 8) + '...)';
+        btn.style.color = '#4ade80';
+      } else if (data.status === 'skipped') {
+        btn.textContent = '⚠ No Kling Key';
+      } else {
+        btn.textContent = '✓ Sent: ' + JSON.stringify(data).slice(0, 40);
+      }
+    } catch (e) {
+      btn.textContent = '✗ Error: ' + e.message;
+    }
   }
 </script>
 

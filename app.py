@@ -4,8 +4,10 @@ import uuid
 import requests
 from flask import Flask, request, jsonify, render_template, send_file
 from dotenv import load_dotenv
+import base64
 import pdfplumber
 from openai import OpenAI
+from docx import Document as DocxDocument
 
 load_dotenv()
 
@@ -51,12 +53,111 @@ Output ONLY valid JSON in this exact format:
 }"""
 
 
+def extract_text(filepath, ext):
+    if ext == ".pdf":
+        return extract_pdf_text(filepath)
+    elif ext in (".docx", ".doc"):
+        return extract_docx_text(filepath)
+    elif ext == ".txt":
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    return ""
+
+
+def extract_docx_text(filepath):
+    try:
+        doc = DocxDocument(filepath)
+        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    except Exception:
+        return ""
+
+
 def extract_pdf_text(filepath):
     text = ""
-    with pdfplumber.open(filepath) as pdf:
-        for page in pdf.pages:
-            text += page.extract_text() or ""
+    # Try pdfplumber
+    try:
+        with pdfplumber.open(filepath) as pdf:
+            for page in pdf.pages:
+                text += page.extract_text() or ""
+        print(f"[PDF] pdfplumber extracted {len(text)} chars")
+    except Exception as e:
+        print(f"[PDF] pdfplumber error: {e}")
+
+    # Try pymupdf
+    if not text.strip():
+        try:
+            import fitz
+            doc = fitz.open(filepath)
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+            print(f"[PDF] pymupdf extracted {len(text)} chars")
+        except Exception as e:
+            print(f"[PDF] pymupdf error: {e}")
+
+    # Vision OCR fallback
+    print(f"[PDF] text after extraction: '{text[:50]}' (len={len(text.strip())})")
+    if not text.strip():
+        print("[PDF] Calling vision OCR...")
+        text = ocr_pdf_with_vision(filepath)
+        print(f"[PDF] OCR returned {len(text)} chars")
+
     return text
+
+
+def ocr_pdf_with_vision(filepath):
+    """Convert PDF pages to images and use Claude Haiku for fast OCR."""
+    try:
+        import fitz
+        import anthropic
+
+        doc = fitz.open(filepath)
+        all_text = []
+        claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+        for page_num, page in enumerate(doc):
+            # Use 72 DPI and JPEG to keep image under 5MB
+            mat = fitz.Matrix(1.0, 1.0)  # 72 DPI
+            pix = page.get_pixmap(matrix=mat)
+            from PIL import Image as PILImage
+            import io
+            pil_img = PILImage.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="JPEG", quality=75)
+            img_bytes = buf.getvalue()
+            img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+            print(f"[OCR] Page {page_num+1} image size: {len(img_bytes)/1024:.0f} KB")
+
+            response = claude.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=2000,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": img_b64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": "Extract all text from this installation manual page. Return only the raw text content, preserving structure. No commentary."
+                        }
+                    ]
+                }]
+            )
+            page_text = response.content[0].text
+            all_text.append(f"--- Page {page_num + 1} ---\n{page_text}")
+
+        doc.close()
+        return "\n\n".join(all_text)
+
+    except Exception as e:
+        print(f"[OCR ERROR] {type(e).__name__}: {e}")
+        return ""
 
 
 def generate_prompts(manual_text, segment_count=5, product_name=""):
@@ -86,24 +187,38 @@ Ensure each segment's end frame naturally connects to the next segment's start f
     return json.loads(content[start:end])
 
 
+def kling_jwt_token():
+    """Generate JWT token for Kling API authentication."""
+    import jwt
+    import time
+    api_key = os.getenv("KLING_API_KEY")
+    api_secret = os.getenv("KLING_API_SECRET")
+    payload = {
+        "iss": api_key,
+        "exp": int(time.time()) + 1800,
+        "nbf": int(time.time()) - 5
+    }
+    return jwt.encode(payload, api_secret, algorithm="HS256")
+
+
 def generate_video_kling(prompt, duration=10):
     """Call Kling 3.0 API to generate a video segment."""
     api_key = os.getenv("KLING_API_KEY")
-    api_secret = os.getenv("KLING_API_SECRET")
-
     if not api_key:
         return {"status": "skipped", "message": "Kling API key not configured"}
 
+    token = kling_jwt_token()
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "kling-v3",
+        "model_name": "kling-v1-6",
         "prompt": prompt,
-        "duration": duration,
+        "duration": 5,
         "aspect_ratio": "16:9",
-        "mode": "pro"
+        "mode": "pro",
+        "cfg_scale": 0.5
     }
 
     try:
@@ -132,15 +247,25 @@ def api_generate_prompts():
     segment_count = int(request.form.get("segments", 5))
     product_name = request.form.get("product_name", "")
 
-    if not file.filename.endswith(".pdf"):
-        return jsonify({"error": "Only PDF files supported"}), 400
+    # Support PDF, Word, TXT
+    fname = file.filename.lower()
+    if fname.endswith(".pdf"):
+        ext = ".pdf"
+    elif fname.endswith(".docx"):
+        ext = ".docx"
+    elif fname.endswith(".doc"):
+        ext = ".doc"
+    elif fname.endswith(".txt"):
+        ext = ".txt"
+    else:
+        return jsonify({"error": "支持 PDF、Word (.docx)、TXT 文件"}), 400
 
-    filename = f"{uuid.uuid4()}.pdf"
+    filename = f"{uuid.uuid4()}{ext}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
     try:
-        manual_text = extract_pdf_text(filepath)
+        manual_text = extract_text(filepath, ext)
         if not manual_text.strip():
             return jsonify({"error": "Could not extract text from PDF"}), 400
 
