@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PlankReel v1 — AI Video Production</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: #0a0a0f;
+      color: #e8e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 24px 40px;
+      border-bottom: 1px solid #1e1e2e;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+    .logo span { color: #6366f1; }
+    .badge {
+      background: #1e1e2e;
+      border: 1px solid #2e2e4e;
+      color: #8888aa;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 20px;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; padding: 60px 24px; }
+
+    h1 { font-size: 42px; font-weight: 700; line-height: 1.15; margin-bottom: 12px; }
+    h1 span { color: #6366f1; }
+    .subtitle { color: #666680; font-size: 16px; margin-bottom: 48px; }
+
+    /* Upload Zone */
+    .upload-zone {
+      border: 2px dashed #2e2e4e;
+      border-radius: 16px;
+      padding: 48px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #0f0f1a;
+      margin-bottom: 24px;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: #6366f1;
+      background: #12122a;
+    }
+    .upload-icon { font-size: 40px; margin-bottom: 16px; }
+    .upload-zone h3 { font-size: 18px; margin-bottom: 8px; }
+    .upload-zone p { color: #666680; font-size: 14px; }
+    .upload-zone input { display: none; }
+    .file-selected { color: #6366f1; font-weight: 600; margin-top: 12px; font-size: 14px; }
+
+    /* Config */
+    .config-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .field label {
+      display: block;
+      font-size: 12px;
+      color: #666680;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+    .field input, .field select {
+      width: 100%;
+      background: #0f0f1a;
+      border: 1px solid #2e2e4e;
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: #e8e8f0;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field input:focus, .field select:focus { border-color: #6366f1; }
+
+    /* Button */
+    .btn-generate {
+      width: 100%;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .btn-generate:hover { background: #4f52d8; }
+    .btn-generate:disabled { background: #2e2e4e; color: #666680; cursor: not-allowed; }
+
+    /* Loading */
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+      color: #666680;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #2e2e4e;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Results */
+    .results { display: none; margin-top: 48px; }
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .results-header h2 { font-size: 22px; font-weight: 700; }
+    .btn-export {
+      background: #1e1e2e;
+      border: 1px solid #2e2e4e;
+      color: #e8e8f0;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    .btn-export:hover { border-color: #6366f1; color: #6366f1; }
+
+    /* Segment Card */
+    .segment-card {
+      background: #0f0f1a;
+      border: 1px solid #1e1e2e;
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 16px;
+      transition: border-color 0.2s;
+    }
+    .segment-card:hover { border-color: #2e2e4e; }
+    .seg-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .seg-num {
+      background: #6366f1;
+      color: #fff;
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .seg-title { font-weight: 600; font-size: 16px; flex: 1; margin-left: 12px; }
+    .seg-duration {
+      background: #1e1e2e;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      color: #666680;
+    }
+    .seg-prompt {
+      background: #0a0a0f;
+      border: 1px solid #1e1e2e;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #aaaacc;
+      margin-bottom: 16px;
+    }
+    .frame-notes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .frame-note {
+      background: #0a0a0f;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+    }
+    .frame-note .label {
+      color: #444466;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 4px;
+      font-size: 10px;
+    }
+    .frame-note .value { color: #8888aa; }
+
+    .btn-gen-video {
+      background: transparent;
+      border: 1px solid #6366f1;
+      color: #6366f1;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+      margin-top: 12px;
+    }
+    .btn-gen-video:hover { background: #6366f1; color: #fff; }
+
+    /* Error */
+    .error-box {
+      display: none;
+      background: #1a0f0f;
+      border: 1px solid #4e2e2e;
+      border-radius: 12px;
+      padding: 20px 24px;
+      color: #ff6666;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Plank<span>Reel</span></div>
+  <div class="badge">v1</div>
+</header>
+
+<div class="container">
+  <h1>Turn Manuals into<br><span>AI Video Prompts</span></h1>
+  <p class="subtitle">Upload an installation manual PDF — AI generates cinematic video prompts ready for Kling or Seedance.</p>
+
+  <!-- Upload -->
+  <div class="upload-zone" id="uploadZone">
+    <div class="upload-icon">📄</div>
+    <h3>Drop your PDF here</h3>
+    <p>or click to browse</p>
+    <input type="file" id="fileInput" accept=".pdf" />
+    <div class="file-selected" id="fileSelected"></div>
+  </div>
+
+  <!-- Config -->
+  <div class="config-row">
+    <div class="field">
+      <label>Product Name</label>
+      <input type="text" id="productName" placeholder="e.g. SuperOak Stair Nosing" />
+    </div>
+    <div class="field">
+      <label>Number of Segments</label>
+      <select id="segmentCount">
+        <option value="3">3 segments (~30 sec)</option>
+        <option value="5" selected>5 segments (~50 sec)</option>
+        <option value="7">7 segments (~1.5 min)</option>
+        <option value="10">10 segments (~2 min)</option>
+      </select>
+    </div>
+  </div>
+
+  <button class="btn-generate" id="generateBtn" disabled>
+    ✦ Generate Video Prompts
+  </button>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>Analyzing manual with DeepSeek AI...</p>
+  </div>
+
+  <!-- Results -->
+  <div class="results" id="results">
+    <div class="results-header">
+      <h2 id="resultsTitle">Video Prompts</h2>
+      <button class="btn-export" id="exportBtn">⬇ Export JSON</button>
+    </div>
+    <div id="segmentsList"></div>
+  </div>
+</div>
+
+<script>
+  let currentFile = null;
+  let currentOutput = null;
+  let outputFilename = null;
+
+  const uploadZone = document.getElementById('uploadZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileSelected = document.getElementById('fileSelected');
+  const generateBtn = document.getElementById('generateBtn');
+  const loading = document.getElementById('loading');
+  const results = document.getElementById('results');
+  const errorBox = document.getElementById('errorBox');
+
+  uploadZone.addEventListener('click', () => fileInput.click());
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.pdf')) setFile(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
+  });
+
+  function setFile(file) {
+    currentFile = file;
+    fileSelected.textContent = '✓ ' + file.name;
+    generateBtn.disabled = false;
+  }
+
+  generateBtn.addEventListener('click', async () => {
+    if (!currentFile) return;
+
+    errorBox.style.display = 'none';
+    loading.style.display = 'block';
+    results.style.display = 'none';
+    generateBtn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', currentFile);
+    formData.append('product_name', document.getElementById('productName').value);
+    formData.append('segments', document.getElementById('segmentCount').value);
+
+    try {
+      const resp = await fetch('/api/generate-prompts', { method: 'POST', body: formData });
+      const data = await resp.json();
+
+      if (!resp.ok) throw new Error(data.error || 'Generation failed');
+
+      currentOutput = data;
+      outputFilename = data.output_file;
+      renderResults(data);
+
+    } catch (err) {
+      errorBox.textContent = '⚠ ' + err.message;
+      errorBox.style.display = 'block';
+    } finally {
+      loading.style.display = 'none';
+      generateBtn.disabled = false;
+    }
+  });
+
+  function renderResults(data) {
+    document.getElementById('resultsTitle').textContent = data.title || 'Video Prompts';
+    const list = document.getElementById('segmentsList');
+    list.innerHTML = '';
+
+    data.segments.forEach(seg => {
+      const card = document.createElement('div');
+      card.className = 'segment-card';
+      card.innerHTML = `
+        <div class="seg-header">
+          <div class="seg-num">${seg.id}</div>
+          <div class="seg-title">${seg.title}</div>
+          <div class="seg-duration">${seg.duration_seconds}s</div>
+        </div>
+        <div class="seg-prompt">${seg.prompt}</div>
+        <div class="frame-notes">
+          <div class="frame-note">
+            <div class="label">▶ Start Frame</div>
+            <div class="value">${seg.start_frame_note || '—'}</div>
+          </div>
+          <div class="frame-note">
+            <div class="label">⏹ End Frame</div>
+            <div class="value">${seg.end_frame_note || '—'}</div>
+          </div>
+        </div>
+        <button class="btn-gen-video" onclick="generateVideo(${seg.id}, \`${seg.prompt.replace(/`/g, "'")}\`, ${seg.duration_seconds})">
+          ▷ Generate with Kling
+        </button>
+      `;
+      list.appendChild(card);
+    });
+
+    results.style.display = 'block';
+  }
+
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    if (!outputFilename) return;
+    window.location.href = '/api/download/' + outputFilename;
+  });
+
+  async function generateVideo(segId, prompt, duration) {
+    alert(`Sending segment ${segId} to Kling API...\n\nThis feature requires a Kling API key configured in .env`);
+  }
+</script>
+
+</body>
+</html>
